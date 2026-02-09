@@ -7,7 +7,7 @@ name = "pptx-slide-copier"
 version = "0.1.0"
 description = "PowerPoint slide copier utility with deep copying of shapes, images, and formatting"
 readme = "README.md"
-license = "MIT"
+license = {text = "MIT"}
 authors = [
     {name = "SpringMT", email = "today.is.sky.blue.sky@gmail.com"}
 ]

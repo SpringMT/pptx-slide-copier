@@ -1,6 +1,7 @@
 """Slide copying utilities."""
 
 from copy import deepcopy
+from io import BytesIO
 from pptx.slide import Slide
 from pptx import Presentation
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
@@ -72,7 +73,10 @@ class SlideCopier:
 
         # Final fallback: use first available layout
         if slide_layout is None:
-            slide_layout = target_prs.slide_layouts[0]
+            if len(target_prs.slide_layouts) > 0:
+                slide_layout = target_prs.slide_layouts[0]
+            else:
+                raise ValueError("Target presentation has no slide layouts available")
 
         # Create new slide with the layout
         dest_slide = target_prs.slides.add_slide(slide_layout)
@@ -120,8 +124,6 @@ class SlideCopier:
             dest_slide: Destination slide
         """
         try:
-            from io import BytesIO
-
             # Get the parts
             source_part = source_slide.part
             dest_part = dest_slide.part

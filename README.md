@@ -14,12 +14,14 @@ PowerPoint slide copier utility - Deep copy slides between presentations while p
 ## Installation
 
 ```bash
-pip install -e .
+pip install pptx-slide-copier
 ```
 
-For development dependencies:
+For development:
 
 ```bash
+git clone https://github.com/SpringMT/pptx-slide-copier.git
+cd pptx-slide-copier
 pip install -e ".[dev]"
 ```
 

@@ -7,7 +7,7 @@ name = "pptx-slide-copier"
 version = "0.1.0"
 description = "PowerPoint slide copier utility with deep copying of shapes, images, and formatting"
 readme = "README.md"
-license = "MIT"
+license = {text = "MIT"}
 authors = [
     {name = "SpringMT", email = "today.is.sky.blue.sky@gmail.com"}
 ]
@@ -15,7 +15,6 @@ requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",

@@ -2,9 +2,10 @@
 
 from copy import deepcopy
 from io import BytesIO
-from pptx.slide import Slide
+
 from pptx import Presentation
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+from pptx.slide import Slide
 
 
 class SlideCopier:
@@ -68,7 +69,7 @@ class SlideCopier:
                                 slide_layout = target_master_layouts[i]
                             break
 
-        except (AttributeError, IndexError) as e:
+        except (AttributeError, IndexError):
             pass
 
         # Final fallback: use first available layout
@@ -86,7 +87,7 @@ class SlideCopier:
             try:
                 new_element = deepcopy(shape.element)
                 dest_slide.shapes._spTree.insert_element_before(new_element, "p:extLst")
-            except Exception as e:
+            except Exception:
                 # If deepcopy fails for a shape, try to continue with others
                 continue
 
@@ -185,6 +186,6 @@ class SlideCopier:
                             # Update to the new rId
                             blip.set(embed_attr, rId_mapping[old_rId])
 
-        except Exception as e:
+        except Exception:
             # If copying images fails, continue (the slide is already copied)
             pass

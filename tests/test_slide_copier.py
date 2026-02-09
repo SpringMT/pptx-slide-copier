@@ -1,11 +1,13 @@
 """Tests for SlideCopier."""
 
+import tempfile
+from pathlib import Path
+
 import pytest
 from pptx import Presentation
 from pptx.util import Inches, Pt
+
 from pptx_slide_copier import SlideCopier
-import tempfile
-from pathlib import Path
 
 
 @pytest.fixture
@@ -112,7 +114,7 @@ class TestSlideCopier:
                     for run in paragraph.runs:
                         if run.text == "Test slide content":
                             # Font properties should be preserved
-                            assert run.font.bold == True
+                            assert run.font.bold
                             # Font name and size should be set
                             assert run.font.name is not None
                             assert run.font.size is not None
@@ -148,8 +150,6 @@ class TestSlideCopier:
     def test_copy_slide_preserves_shapes(self, sample_presentation):
         """Test that shapes are copied."""
         source_prs = sample_presentation
-        source_slide = source_prs.slides[0]
-        source_shape_count = len(source_slide.shapes)
 
         target_prs = Presentation()
         copied_slide = SlideCopier.copy_slide(source_prs, 0, target_prs)

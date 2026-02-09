@@ -1,0 +1,65 @@
+# Claude Code Rules for pptx-slide-copier
+
+## Git Workflow Rules
+
+### NEVER push directly to main branch
+- All changes MUST go through the Pull Request workflow
+- Before any `git push`, verify the current branch is NOT main
+- If on main branch, create a new feature branch first
+
+### Always follow this workflow:
+1. Create a new branch: `git checkout -b <descriptive-branch-name>`
+2. Make changes and commit
+3. Push to remote: `git push -u origin <branch-name>`
+4. Create a Pull Request using `gh pr create`
+
+### Branch Naming Convention
+- Use descriptive kebab-case names
+- Examples: `add-feature-x`, `fix-bug-y`, `update-documentation`
+
+### Before pushing, always check:
+```bash
+git branch --show-current
+```
+- If output is "main", STOP and create a new branch
+
+## Code Quality Rules
+
+### Before committing:
+- Run linter: `ruff check .`
+- Run tests: `pytest tests/ -v`
+- Fix any errors before committing
+
+### Commit Message Format
+- Use clear, descriptive commit messages
+- End with Claude Code attribution:
+  ```
+  🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+  Co-Authored-By: Claude <noreply@anthropic.com>
+  ```
+
+## Python Development Rules
+
+### Code Style
+- Follow PEP 8 conventions
+- Line length: 120 characters (configured in pyproject.toml)
+- Use type hints where appropriate
+
+### Testing
+- Write tests for new features
+- Ensure all tests pass before creating PR
+- Maintain test coverage
+
+## Documentation Rules
+
+### Only create documentation when explicitly requested
+- Do not proactively create README or markdown files
+- Update existing documentation when changes affect usage
+
+## Package Management
+
+### PyPI Publishing
+- Never publish to PyPI without explicit user confirmation
+- Always test with TestPyPI first if available
+- Verify version number before publishing

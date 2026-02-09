@@ -70,12 +70,9 @@ class SlideCopier:
         except (AttributeError, IndexError) as e:
             pass
 
-        # Final fallback: use any available layout
+        # Final fallback: use first available layout
         if slide_layout is None:
-            if len(target_prs.slide_layouts) > 6:
-                slide_layout = target_prs.slide_layouts[6]
-            else:
-                slide_layout = target_prs.slide_layouts[0]
+            slide_layout = target_prs.slide_layouts[0]
 
         # Create new slide with the layout
         dest_slide = target_prs.slides.add_slide(slide_layout)

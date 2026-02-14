@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pptx-slide-copier"
-version = "0.1.0"
+version = "0.1.1"
 description = "PowerPoint slide copier utility with deep copying of shapes, images, and formatting"
 readme = "README.md"
 license = {text = "MIT"}

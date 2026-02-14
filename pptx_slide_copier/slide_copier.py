@@ -153,6 +153,14 @@ class SlideCopier:
         # Create new slide with the copied layout
         dest_slide = target_prs.slides.add_slide(target_layout)
 
+        # Remove auto-generated placeholder shapes from the layout
+        # to avoid duplicates when we deepcopy the source shapes below.
+        spTree = dest_slide.shapes._spTree
+        for sp in list(spTree.iterchildren(
+            '{http://schemas.openxmlformats.org/presentationml/2006/main}sp',
+        )):
+            spTree.remove(sp)
+
         # Copy all shapes using deepcopy at XML level
         for shape in source_slide.shapes:
             try:

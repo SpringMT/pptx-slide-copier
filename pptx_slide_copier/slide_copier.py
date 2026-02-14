@@ -25,17 +25,17 @@ class SlideCopier:
 
     @staticmethod
     def copy_layouts(source_prs: Presentation, target_prs: Presentation) -> dict:
-        """ソースの全マスター/レイアウト/テーマをターゲットに一括コピー。
+        """Copy all masters/layouts/themes from source to target at once.
 
-        スライドコピー前に1回だけ呼ぶことで、ターゲットには
-        「ターゲット元のテーマ + ソースのテーマ」だけが存在する状態になる。
+        Call this once before copying slides so that the target ends up
+        with only the original target themes plus the source themes.
 
         Args:
             source_prs: Source presentation
             target_prs: Target presentation
 
         Returns:
-            layout_map: {ソースのレイアウト名: ターゲットのSlideLayout} のdict
+            layout_map: dict mapping {source layout name: target SlideLayout}
         """
         cache: dict = {}
         layout_map: dict[str, object] = {}
@@ -47,7 +47,7 @@ class SlideCopier:
             )
 
             if matching_target_master is not None:
-                # テーマ同一 → 既存レイアウトを名前で引く + 不足分だけコピー
+                # Same theme — look up existing layouts by name, copy only missing ones
                 target_master_part = matching_target_master.part
                 cache[id(source_master_part)] = target_master_part
                 existing = {sl.name: sl for sl in matching_target_master.slide_layouts}
@@ -55,7 +55,7 @@ class SlideCopier:
                     if layout.name in existing:
                         layout_map[layout.name] = existing[layout.name]
                     else:
-                        # ターゲットにないレイアウトだけコピー
+                        # Layout not in target — copy it
                         source_layout_part = layout.part
                         target_layout_part = SlideCopier._copy_slide_layout_part(
                             source_layout_part, target_prs, cache,
@@ -63,7 +63,7 @@ class SlideCopier:
                         cache[id(source_layout_part)] = target_layout_part
                         layout_map[layout.name] = target_layout_part.slide_layout
             else:
-                # テーマ不一致 → 従来通り全コピー
+                # Different theme — copy everything as before
                 target_master_part = SlideCopier._get_or_copy_slide_master(
                     source_master_part, target_prs, cache,
                 )
@@ -190,7 +190,7 @@ class SlideCopier:
 
     @staticmethod
     def _find_matching_master(source_master_part, target_prs):
-        """ソースマスターのテーマ blob と一致するターゲットマスターを探す。"""
+        """Find a target master whose theme blob matches the source master's."""
         try:
             source_theme_blob = source_master_part.part_related_by(RT.THEME).blob
         except KeyError:

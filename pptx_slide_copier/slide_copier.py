@@ -39,23 +39,44 @@ class SlideCopier:
         cache: dict = {}
         layout_map: dict[str, object] = {}
 
-        for master in source_prs.slide_masters:
-            source_master_part = master.part
-            target_master_part = SlideCopier._get_or_copy_slide_master(
-                source_master_part, target_prs, cache,
+        for source_master in source_prs.slide_masters:
+            source_master_part = source_master.part
+            matching_target_master = SlideCopier._find_matching_master(
+                source_master_part, target_prs,
             )
 
-            for layout in master.slide_layouts:
-                source_layout_part = layout.part
-                cache_key = id(source_layout_part)
-                if cache_key in cache:
-                    target_layout_part = cache[cache_key]
-                else:
-                    target_layout_part = SlideCopier._copy_slide_layout_part(
-                        source_layout_part, target_prs, cache,
-                    )
-                    cache[cache_key] = target_layout_part
-                layout_map[layout.name] = target_layout_part.slide_layout
+            if matching_target_master is not None:
+                # テーマ同一 → 既存レイアウトを名前で引く + 不足分だけコピー
+                target_master_part = matching_target_master.part
+                cache[id(source_master_part)] = target_master_part
+                existing = {l.name: l for l in matching_target_master.slide_layouts}
+                for layout in source_master.slide_layouts:
+                    if layout.name in existing:
+                        layout_map[layout.name] = existing[layout.name]
+                    else:
+                        # ターゲットにないレイアウトだけコピー
+                        source_layout_part = layout.part
+                        target_layout_part = SlideCopier._copy_slide_layout_part(
+                            source_layout_part, target_prs, cache,
+                        )
+                        cache[id(source_layout_part)] = target_layout_part
+                        layout_map[layout.name] = target_layout_part.slide_layout
+            else:
+                # テーマ不一致 → 従来通り全コピー
+                target_master_part = SlideCopier._get_or_copy_slide_master(
+                    source_master_part, target_prs, cache,
+                )
+                for layout in source_master.slide_layouts:
+                    source_layout_part = layout.part
+                    cache_key = id(source_layout_part)
+                    if cache_key not in cache:
+                        target_layout_part = SlideCopier._copy_slide_layout_part(
+                            source_layout_part, target_prs, cache,
+                        )
+                        cache[cache_key] = target_layout_part
+                    else:
+                        target_layout_part = cache[cache_key]
+                    layout_map[layout.name] = target_layout_part.slide_layout
 
         return layout_map
 
@@ -165,6 +186,24 @@ class SlideCopier:
         )
         cache[cache_key] = target_layout_part
         return target_layout_part
+
+    @staticmethod
+    def _find_matching_master(source_master_part, target_prs):
+        """ソースマスターのテーマ blob と一致するターゲットマスターを探す。"""
+        try:
+            source_theme_blob = source_master_part.part_related_by(RT.THEME).blob
+        except KeyError:
+            return None
+
+        for target_master in target_prs.slide_masters:
+            try:
+                target_theme_blob = target_master.part.part_related_by(RT.THEME).blob
+            except KeyError:
+                continue
+            if source_theme_blob == target_theme_blob:
+                return target_master
+
+        return None
 
     @staticmethod
     def _copy_slide_layout_part(source_layout_part, target_prs, cache):

@@ -256,8 +256,9 @@ class TestLayoutPreservation:
         assert s1.slide_layout.name == layout_1.name
 
     def test_target_has_two_themes(self):
-        """After copy_layouts, target should have original theme + source theme (2 total)."""
+        """After copy_layouts with different themes, target should have original + source theme."""
         from pptx.opc.constants import CONTENT_TYPE as CT
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
         def _count_theme_parts(prs):
             parts = set()
@@ -272,6 +273,10 @@ class TestLayoutPreservation:
         source_prs = Presentation()
         source_prs.slides.add_slide(source_prs.slide_layouts[0])
 
+        # ソースのテーマ blob を変更して異なるテーマにする
+        source_theme_part = source_prs.slide_masters[0].part.part_related_by(RT.THEME)
+        source_theme_part._blob = source_theme_part.blob + b"<!-- modified -->"
+
         target_prs = Presentation()
         original_theme_count = _count_theme_parts(target_prs)
 
@@ -279,3 +284,46 @@ class TestLayoutPreservation:
 
         total_theme_count = _count_theme_parts(target_prs)
         assert total_theme_count == original_theme_count + 1
+
+    def test_same_theme_no_duplicate(self):
+        """同じテーマを持つソースとターゲットでcopy_layouts後にテーマ数が増えないこと。"""
+        from pptx.opc.constants import CONTENT_TYPE as CT
+
+        def _count_theme_parts(prs):
+            parts = set()
+            for rel in prs.part.package.iter_rels():
+                try:
+                    if rel.target_part.content_type == CT.OFC_THEME:
+                        parts.add(rel.target_part.partname)
+                except Exception:
+                    pass
+            return len(parts)
+
+        # 同じデフォルトテンプレートから作成
+        source_prs = Presentation()
+        source_prs.slides.add_slide(source_prs.slide_layouts[0])
+
+        target_prs = Presentation()
+        original_theme_count = _count_theme_parts(target_prs)
+
+        SlideCopier.copy_layouts(source_prs, target_prs)
+
+        total_theme_count = _count_theme_parts(target_prs)
+        assert total_theme_count == original_theme_count
+
+    def test_same_theme_layout_map_uses_existing(self):
+        """テーマ同一時、layout_mapの値がターゲットの既存レイアウトを指すこと。"""
+        source_prs = Presentation()
+        source_prs.slides.add_slide(source_prs.slide_layouts[0])
+
+        target_prs = Presentation()
+        # ターゲットの既存レイアウトを記録
+        existing_layouts = {l.name: l for master in target_prs.slide_masters
+                           for l in master.slide_layouts}
+
+        layout_map = SlideCopier.copy_layouts(source_prs, target_prs)
+
+        # layout_mapの各値がターゲットの既存レイアウトと同一であること
+        for name, layout in layout_map.items():
+            if name in existing_layouts:
+                assert layout is existing_layouts[name]

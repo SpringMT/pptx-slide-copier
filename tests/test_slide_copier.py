@@ -318,8 +318,8 @@ class TestLayoutPreservation:
 
         target_prs = Presentation()
         # ターゲットの既存レイアウトを記録
-        existing_layouts = {l.name: l for master in target_prs.slide_masters
-                           for l in master.slide_layouts}
+        existing_layouts = {sl.name: sl for master in target_prs.slide_masters
+                           for sl in master.slide_layouts}
 
         layout_map = SlideCopier.copy_layouts(source_prs, target_prs)
 

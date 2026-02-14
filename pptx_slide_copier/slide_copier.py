@@ -7,7 +7,6 @@ from pptx import Presentation
 from pptx.opc.constants import CONTENT_TYPE as CT
 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 from pptx.opc.package import Part
-from pptx.opc.packuri import PackURI
 from pptx.parts.slide import SlideLayoutPart, SlideMasterPart
 from pptx.slide import Slide
 
@@ -49,7 +48,7 @@ class SlideCopier:
                 # テーマ同一 → 既存レイアウトを名前で引く + 不足分だけコピー
                 target_master_part = matching_target_master.part
                 cache[id(source_master_part)] = target_master_part
-                existing = {l.name: l for l in matching_target_master.slide_layouts}
+                existing = {sl.name: sl for sl in matching_target_master.slide_layouts}
                 for layout in source_master.slide_layouts:
                     if layout.name in existing:
                         layout_map[layout.name] = existing[layout.name]

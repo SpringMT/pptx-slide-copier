@@ -82,7 +82,12 @@ class SlideCopier:
         return layout_map
 
     @staticmethod
-    def copy_slides(source_prs: Presentation, target_prs: Presentation, slide_indices=None):
+    def copy_slides(
+        source_prs: Presentation,
+        target_prs: Presentation,
+        slide_indices=None,
+        target_slide_index: int | None = None,
+    ):
         """Copy multiple slides from source to target.
 
         Copies all source layouts/masters/themes once upfront via
@@ -94,6 +99,10 @@ class SlideCopier:
             target_prs: Target presentation
             slide_indices: List of 0-based slide indices to copy.
                            If None, all slides are copied.
+            target_slide_index: Optional 0-based index at which to insert the
+                           slides in the target presentation.  Slides are
+                           inserted sequentially starting from this position.
+                           If None, slides are appended at the end.
 
         Returns:
             List of newly created slides in target presentation
@@ -103,8 +112,15 @@ class SlideCopier:
 
         layout_map = SlideCopier.copy_layouts(source_prs, target_prs)
         slides = []
-        for idx in slide_indices:
-            slide = SlideCopier.copy_slide(source_prs, idx, target_prs, _layout_map=layout_map)
+        for i, idx in enumerate(slide_indices):
+            insert_at = None
+            if target_slide_index is not None:
+                insert_at = target_slide_index + i
+            slide = SlideCopier.copy_slide(
+                source_prs, idx, target_prs,
+                _layout_map=layout_map,
+                target_slide_index=insert_at,
+            )
             slides.append(slide)
         return slides
 
@@ -114,6 +130,7 @@ class SlideCopier:
         source_slide_index: int,
         target_prs: Presentation,
         _layout_map: dict | None = None,
+        target_slide_index: int | None = None,
     ) -> Slide:
         """Copy a slide from source presentation to target presentation.
 
@@ -129,6 +146,9 @@ class SlideCopier:
                          ``copy_layouts()``.  When provided the pre-copied
                          layout is looked up by name.  When *None* the layout
                          is copied on demand (backward-compatible behaviour).
+            target_slide_index: Optional 0-based index at which to insert the
+                         slide in the target presentation.  When *None* (the
+                         default) the slide is appended at the end.
 
         Returns:
             The newly created slide in target presentation
@@ -171,6 +191,10 @@ class SlideCopier:
 
         # Copy image relationships (pictures)
         SlideCopier._copy_images(source_slide, dest_slide)
+
+        # Move slide to the requested position if target_slide_index is given
+        if target_slide_index is not None:
+            SlideCopier._move_slide_to_index(target_prs, target_slide_index)
 
         return dest_slide
 
@@ -389,6 +413,39 @@ class SlideCopier:
                 val = el.get(attr)
                 if val and val in rid_mapping:
                     el.set(attr, rid_mapping[val])
+
+    # ------------------------------------------------------------------
+    # Slide reordering
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _move_slide_to_index(prs: Presentation, target_index: int):
+        """Move the last slide in the presentation to the given 0-based index.
+
+        ``add_slide()`` always appends, so this helper is called afterwards to
+        reposition the newly added slide.
+        """
+        sldIdLst = prs.slides._sldIdLst
+        sldId_elements = list(sldIdLst)
+        num_slides = len(sldId_elements)
+
+        # Clamp index to valid range
+        if target_index < 0:
+            target_index = 0
+        if target_index >= num_slides:
+            # Already at the end, nothing to do
+            return
+
+        # The newly added slide is the last element
+        new_sldId = sldId_elements[-1]
+        sldIdLst.remove(new_sldId)
+
+        if target_index == 0:
+            sldIdLst.insert(0, new_sldId)
+        else:
+            # Insert after the element currently at target_index - 1
+            ref_element = list(sldIdLst)[target_index - 1]
+            ref_element.addnext(new_sldId)
 
     # ------------------------------------------------------------------
     # Existing helpers

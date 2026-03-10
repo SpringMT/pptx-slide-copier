@@ -311,6 +311,104 @@ class TestLayoutPreservation:
         total_theme_count = _count_theme_parts(target_prs)
         assert total_theme_count == original_theme_count
 
+    def test_copy_slide_target_index_insert_at_beginning(self):
+        """target_slide_index=0 inserts the copied slide at the beginning."""
+        target_prs = Presentation()
+        layout = target_prs.slide_layouts[0]
+        # Add two existing slides with identifiable text
+        s1 = target_prs.slides.add_slide(layout)
+        s1.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "existing-1"
+        s2 = target_prs.slides.add_slide(layout)
+        s2.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "existing-2"
+
+        source_prs = Presentation()
+        src_slide = source_prs.slides.add_slide(source_prs.slide_layouts[0])
+        src_slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "copied"
+
+        SlideCopier.copy_slide(source_prs, 0, target_prs, target_slide_index=0)
+
+        assert len(target_prs.slides) == 3
+        # The copied slide should be first
+        texts = []
+        for slide in target_prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text:
+                    texts.append(shape.text)
+                    break
+        assert texts == ["copied", "existing-1", "existing-2"]
+
+    def test_copy_slide_target_index_insert_in_middle(self):
+        """target_slide_index=1 inserts the copied slide at position 1."""
+        target_prs = Presentation()
+        layout = target_prs.slide_layouts[0]
+        s1 = target_prs.slides.add_slide(layout)
+        s1.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "existing-1"
+        s2 = target_prs.slides.add_slide(layout)
+        s2.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "existing-2"
+
+        source_prs = Presentation()
+        src_slide = source_prs.slides.add_slide(source_prs.slide_layouts[0])
+        src_slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "copied"
+
+        SlideCopier.copy_slide(source_prs, 0, target_prs, target_slide_index=1)
+
+        assert len(target_prs.slides) == 3
+        texts = []
+        for slide in target_prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text:
+                    texts.append(shape.text)
+                    break
+        assert texts == ["existing-1", "copied", "existing-2"]
+
+    def test_copy_slide_target_index_none_appends(self):
+        """target_slide_index=None (default) appends at the end."""
+        target_prs = Presentation()
+        layout = target_prs.slide_layouts[0]
+        s1 = target_prs.slides.add_slide(layout)
+        s1.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "existing-1"
+
+        source_prs = Presentation()
+        src_slide = source_prs.slides.add_slide(source_prs.slide_layouts[0])
+        src_slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "copied"
+
+        SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        assert len(target_prs.slides) == 2
+        texts = []
+        for slide in target_prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text:
+                    texts.append(shape.text)
+                    break
+        assert texts == ["existing-1", "copied"]
+
+    def test_copy_slides_target_index(self):
+        """copy_slides with target_slide_index inserts slides sequentially."""
+        target_prs = Presentation()
+        layout = target_prs.slide_layouts[0]
+        s1 = target_prs.slides.add_slide(layout)
+        s1.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "existing-1"
+        s2 = target_prs.slides.add_slide(layout)
+        s2.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "existing-2"
+
+        source_prs = Presentation()
+        src1 = source_prs.slides.add_slide(source_prs.slide_layouts[0])
+        src1.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "copied-A"
+        src2 = source_prs.slides.add_slide(source_prs.slide_layouts[0])
+        src2.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text_frame.text = "copied-B"
+
+        SlideCopier.copy_slides(source_prs, target_prs, target_slide_index=1)
+
+        assert len(target_prs.slides) == 4
+        texts = []
+        for slide in target_prs.slides:
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text:
+                    texts.append(shape.text)
+                    break
+        assert texts == ["existing-1", "copied-A", "copied-B", "existing-2"]
+
     def test_same_theme_layout_map_uses_existing(self):
         """テーマ同一時、layout_mapの値がターゲットの既存レイアウトを指すこと。"""
         source_prs = Presentation()

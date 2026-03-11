@@ -155,8 +155,9 @@ class SlideCopier:
         """
         source_slide = source_prs.slides[source_slide_index]
 
-        # Ensure target presentation has the same slide size as source
-        SlideCopier._copy_slide_size(source_prs, target_prs)
+        # Copy slide size only when target has no existing slides
+        if len(target_prs.slides) == 0:
+            SlideCopier._copy_slide_size(source_prs, target_prs)
 
         # Resolve the target layout
         if _layout_map is not None:
@@ -258,20 +259,23 @@ class SlideCopier:
             partname, CT.PML_SLIDE_LAYOUT, package, new_layout_element,
         )
 
-        # 4. Copy non-structural relationships (images, etc.) and remap rIds
+        # 4. Layout → Master relationship
+        target_layout_part.relate_to(target_master_part, RT.SLIDE_MASTER)
+
+        # 5. Master → Layout relationship + sldLayoutIdLst entry
+        #    Register first so that the layout part is reachable via
+        #    iter_parts() and image deduplication works in step 6.
+        rId = target_master_part.relate_to(target_layout_part, RT.SLIDE_LAYOUT)
+        sld_layout_id_lst = target_master_part._element.get_or_add_sldLayoutIdLst()
+        sld_layout_id = sld_layout_id_lst._add_sldLayoutId(rId=rId)
+        sld_layout_id.set("id", str(SlideCopier._next_unique_id(target_prs)))
+
+        # 6. Copy non-structural relationships (images, etc.) and remap rIds
         rid_mapping = SlideCopier._copy_part_rels(
             source_layout_part, target_layout_part, package,
         )
         if rid_mapping:
             SlideCopier._remap_rids(new_layout_element, rid_mapping)
-
-        # 5. Layout → Master relationship
-        target_layout_part.relate_to(target_master_part, RT.SLIDE_MASTER)
-
-        # 6. Master → Layout relationship + sldLayoutIdLst entry
-        rId = target_master_part.relate_to(target_layout_part, RT.SLIDE_LAYOUT)
-        sld_layout_id_lst = target_master_part._element.get_or_add_sldLayoutIdLst()
-        sld_layout_id_lst._add_sldLayoutId(rId=rId)
 
         return target_layout_part
 
@@ -279,11 +283,22 @@ class SlideCopier:
     def _get_or_copy_slide_master(source_master_part, target_prs, cache):
         """Return a SlideMasterPart in target_prs that mirrors source_master_part.
 
-        Uses cache to avoid duplicating masters.
+        Uses cache to avoid duplicating masters.  When the source master's
+        theme already exists in the target presentation the existing master
+        is reused instead of creating a duplicate.
         """
         cache_key = id(source_master_part)
         if cache_key in cache:
             return cache[cache_key]
+
+        # Check if the target already has a master with the same theme
+        matching_master = SlideCopier._find_matching_master(
+            source_master_part, target_prs,
+        )
+        if matching_master is not None:
+            target_master_part = matching_master.part
+            cache[cache_key] = target_master_part
+            return target_master_part
 
         target_master_part = SlideCopier._copy_slide_master_part(
             source_master_part, target_prs, cache,
@@ -315,18 +330,21 @@ class SlideCopier:
             source_master_part, target_master_part, target_prs, cache,
         )
 
-        # 5. Copy non-structural relationships (images, etc.) and remap rIds
+        # 5. Register master in presentation's sldMasterIdLst first so
+        #    that the part is reachable via iter_parts() and image
+        #    deduplication works correctly in step 6.
+        prs_part = target_prs.part
+        rId = prs_part.relate_to(target_master_part, RT.SLIDE_MASTER)
+        sld_master_id_lst = prs_part._element.get_or_add_sldMasterIdLst()
+        sld_master_id = sld_master_id_lst._add_sldMasterId(rId=rId)
+        sld_master_id.set("id", str(SlideCopier._next_unique_id(target_prs)))
+
+        # 6. Copy non-structural relationships (images, etc.) and remap rIds
         rid_mapping = SlideCopier._copy_part_rels(
             source_master_part, target_master_part, package,
         )
         if rid_mapping:
             SlideCopier._remap_rids(new_master_element, rid_mapping)
-
-        # 6. Register master in presentation's sldMasterIdLst
-        prs_part = target_prs.part
-        rId = prs_part.relate_to(target_master_part, RT.SLIDE_MASTER)
-        sld_master_id_lst = prs_part._element.get_or_add_sldMasterIdLst()
-        sld_master_id_lst._add_sldMasterId(rId=rId)
 
         return target_master_part
 
@@ -353,6 +371,52 @@ class SlideCopier:
         )
 
         target_master_part.relate_to(target_theme_part, RT.THEME)
+
+        # Copy theme relationships (e.g. background images referenced via
+        # r:embed inside the theme XML).  The generic _copy_part_rels cannot
+        # be used here because theme is a plain blob-based Part without
+        # get_or_add_image_part.
+        rid_mapping: dict[str, str] = {}
+        for rId, rel in source_theme_part.rels.items():
+            if rel.is_external:
+                new_rId = target_theme_part.relate_to(
+                    rel.target_ref, rel.reltype, is_external=True,
+                )
+            elif rel.reltype == RT.IMAGE:
+                src_img = rel.target_part
+                new_partname = package.next_partname(
+                    _partname_to_template(src_img.partname),
+                )
+                new_img = Part(
+                    new_partname, src_img.content_type,
+                    package, blob=src_img.blob,
+                )
+                new_rId = target_theme_part.relate_to(new_img, rel.reltype)
+            else:
+                src_target = rel.target_part
+                new_partname = package.next_partname(
+                    _partname_to_template(src_target.partname),
+                )
+                new_part = Part(
+                    new_partname, src_target.content_type,
+                    package, blob=src_target.blob,
+                )
+                new_rId = target_theme_part.relate_to(new_part, rel.reltype)
+
+            if rId != new_rId:
+                rid_mapping[rId] = new_rId
+
+        if rid_mapping:
+            theme_xml = target_theme_part.blob.decode("utf-8")
+            for old_rid, new_rid in rid_mapping.items():
+                theme_xml = theme_xml.replace(
+                    f'r:embed="{old_rid}"', f'r:embed="{new_rid}"',
+                )
+                theme_xml = theme_xml.replace(
+                    f'r:link="{old_rid}"', f'r:link="{new_rid}"',
+                )
+            target_theme_part._blob = theme_xml.encode("utf-8")
+
         cache[cache_key] = target_theme_part
 
     # ------------------------------------------------------------------
@@ -413,6 +477,43 @@ class SlideCopier:
                 val = el.get(attr)
                 if val and val in rid_mapping:
                     el.set(attr, rid_mapping[val])
+
+    # ------------------------------------------------------------------
+    # ID generation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _next_unique_id(prs: Presentation) -> int:
+        """Return the next available id for sldMasterId / sldLayoutId elements.
+
+        Both element types share the same id space.  Valid values start at
+        2147483648 (0x80000000).  This helper scans all existing ids in
+        ``sldMasterIdLst`` and every master's ``sldLayoutIdLst`` and returns
+        ``max(existing) + 1``.
+        """
+        MIN_ID = 2147483648  # 0x80000000
+        used: set[int] = set()
+
+        prs_element = prs.part._element
+
+        # Collect ids from sldMasterIdLst
+        master_id_lst = prs_element.sldMasterIdLst
+        if master_id_lst is not None:
+            for entry in master_id_lst:
+                val = entry.get("id")
+                if val is not None:
+                    used.add(int(val))
+
+        # Collect ids from each master's sldLayoutIdLst
+        for master in prs.slide_masters:
+            layout_id_lst = master.part._element.sldLayoutIdLst
+            if layout_id_lst is not None:
+                for entry in layout_id_lst:
+                    val = entry.get("id")
+                    if val is not None:
+                        used.add(int(val))
+
+        return max(used | {MIN_ID - 1}) + 1
 
     # ------------------------------------------------------------------
     # Slide reordering

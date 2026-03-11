@@ -425,3 +425,102 @@ class TestLayoutPreservation:
         for name, layout in layout_map.items():
             if name in existing_layouts:
                 assert layout is existing_layouts[name]
+
+
+class TestMasterLayoutIdAttributes:
+    """Test that copied sldMasterId and sldLayoutId elements have valid id attributes."""
+
+    @staticmethod
+    def _make_different_theme_source():
+        """Create a source presentation with a modified theme blob."""
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+
+        prs = Presentation()
+        theme_part = prs.slide_masters[0].part.part_related_by(RT.THEME)
+        theme_part._blob = theme_part.blob + b"<!-- different -->"
+        prs.slides.add_slide(prs.slide_layouts[0])
+        return prs
+
+    def test_copy_slide_different_theme_has_master_id(self):
+        """sldMasterId elements must have an id attribute after copy with different theme."""
+        source_prs = self._make_different_theme_source()
+        target_prs = Presentation()
+
+        SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        master_id_lst = target_prs.part._element.sldMasterIdLst
+        for entry in master_id_lst:
+            assert entry.get("id") is not None, "sldMasterId missing id attribute"
+
+    def test_copy_slide_different_theme_has_layout_id(self):
+        """sldLayoutId elements must have an id attribute after copy with different theme."""
+        source_prs = self._make_different_theme_source()
+        target_prs = Presentation()
+
+        SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        for master in target_prs.slide_masters:
+            layout_id_lst = master.part._element.sldLayoutIdLst
+            if layout_id_lst is not None:
+                for entry in layout_id_lst:
+                    assert entry.get("id") is not None, "sldLayoutId missing id attribute"
+
+    def test_copy_slides_different_theme_has_master_id(self):
+        """sldMasterId elements must have an id attribute after copy_slides with different theme."""
+        source_prs = self._make_different_theme_source()
+        target_prs = Presentation()
+
+        SlideCopier.copy_slides(source_prs, target_prs)
+
+        master_id_lst = target_prs.part._element.sldMasterIdLst
+        for entry in master_id_lst:
+            assert entry.get("id") is not None, "sldMasterId missing id attribute"
+
+    def test_ids_are_unique(self):
+        """All sldMasterId and sldLayoutId id values must be unique across the presentation."""
+        source_prs = self._make_different_theme_source()
+        target_prs = Presentation()
+
+        SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        all_ids = []
+        master_id_lst = target_prs.part._element.sldMasterIdLst
+        if master_id_lst is not None:
+            for entry in master_id_lst:
+                val = entry.get("id")
+                if val is not None:
+                    all_ids.append(int(val))
+
+        for master in target_prs.slide_masters:
+            layout_id_lst = master.part._element.sldLayoutIdLst
+            if layout_id_lst is not None:
+                for entry in layout_id_lst:
+                    val = entry.get("id")
+                    if val is not None:
+                        all_ids.append(int(val))
+
+        assert len(all_ids) == len(set(all_ids)), f"Duplicate ids found: {all_ids}"
+
+    def test_copy_slide_different_theme_with_target_index_has_ids(self):
+        """File must not be corrupted when using target_slide_index with different theme."""
+        source_prs = self._make_different_theme_source()
+        target_prs = Presentation()
+        target_prs.slides.add_slide(target_prs.slide_layouts[0])
+        target_prs.slides.add_slide(target_prs.slide_layouts[0])
+
+        SlideCopier.copy_slide(source_prs, 0, target_prs, target_slide_index=1)
+
+        master_id_lst = target_prs.part._element.sldMasterIdLst
+        for entry in master_id_lst:
+            assert entry.get("id") is not None, "sldMasterId missing id attribute"
+
+        # Verify file can be saved and reloaded
+        with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
+            target_prs.save(tmp.name)
+            tmp_path = tmp.name
+
+        try:
+            reloaded = Presentation(tmp_path)
+            assert len(reloaded.slides) == 3
+        finally:
+            Path(tmp_path).unlink()

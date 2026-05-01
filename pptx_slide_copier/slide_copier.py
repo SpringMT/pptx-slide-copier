@@ -190,8 +190,13 @@ class SlideCopier:
             except Exception:
                 continue
 
-        # Copy image relationships (pictures)
-        SlideCopier._copy_images(source_slide, dest_slide)
+        # Copy all non-structural relationships (images, charts, media, etc.)
+        # and remap rIds in the copied XML so references stay valid.
+        rid_mapping = SlideCopier._copy_part_rels(
+            source_slide.part, dest_slide.part, target_prs.part.package,
+        )
+        if rid_mapping:
+            SlideCopier._remap_rids(dest_slide.shapes._spTree, rid_mapping)
 
         # Move slide to the requested position if target_slide_index is given
         if target_slide_index is not None:

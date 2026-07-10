@@ -190,13 +190,19 @@ class SlideCopier:
             except Exception:
                 continue
 
+        # Copy the slide-level background (p:bg), if any.  Without this the
+        # copied slide silently falls back to the layout/master background.
+        SlideCopier._copy_slide_background(source_slide, dest_slide)
+
         # Copy all non-structural relationships (images, charts, media, etc.)
-        # and remap rIds in the copied XML so references stay valid.
+        # and remap rIds in the copied XML so references stay valid.  Remap
+        # the whole slide element (not just spTree) so references outside the
+        # shape tree — e.g. a background image in p:bg — are covered too.
         rid_mapping = SlideCopier._copy_part_rels(
             source_slide.part, dest_slide.part, target_prs.part.package,
         )
         if rid_mapping:
-            SlideCopier._remap_rids(dest_slide.shapes._spTree, rid_mapping)
+            SlideCopier._remap_rids(dest_slide.element, rid_mapping)
 
         # Move slide to the requested position if target_slide_index is given
         if target_slide_index is not None:
@@ -446,28 +452,48 @@ class SlideCopier:
                     rel.target_ref, rel.reltype, is_external=True,
                 )
             elif rel.reltype == RT.IMAGE:
-                image_blob = rel.target_part.blob
-                image_stream = BytesIO(image_blob)
-                _image_part, new_rId = target_part.get_or_add_image_part(image_stream)
+                try:
+                    image_blob = rel.target_part.blob
+                    image_stream = BytesIO(image_blob)
+                    _image_part, new_rId = target_part.get_or_add_image_part(image_stream)
+                except Exception:
+                    # Image parts that PIL cannot identify — e.g. SVG
+                    # (svgBlip extension), EMF/WMF — make
+                    # get_or_add_image_part raise.  Fall back to copying the
+                    # blob as a generic Part (no deduplication, but the
+                    # reference stays valid).
+                    new_rId = SlideCopier._copy_rel_as_generic_part(
+                        rel, target_part, target_package,
+                    )
             else:
                 # For other internal rels (e.g. charts, media), copy the
                 # blob as a generic Part.
-                src_target = rel.target_part
-                new_partname = target_package.next_partname(
-                    _partname_to_template(src_target.partname),
+                new_rId = SlideCopier._copy_rel_as_generic_part(
+                    rel, target_part, target_package,
                 )
-                new_part = Part(
-                    new_partname,
-                    src_target.content_type,
-                    target_package,
-                    blob=src_target.blob,
-                )
-                new_rId = target_part.relate_to(new_part, rel.reltype)
 
             if rId != new_rId:
                 rid_mapping[rId] = new_rId
 
         return rid_mapping
+
+    @staticmethod
+    def _copy_rel_as_generic_part(rel, target_part, target_package):
+        """Copy an internal relationship's target as a generic blob Part.
+
+        Returns the new rId on target_part.
+        """
+        src_target = rel.target_part
+        new_partname = target_package.next_partname(
+            _partname_to_template(src_target.partname),
+        )
+        new_part = Part(
+            new_partname,
+            src_target.content_type,
+            target_package,
+            blob=src_target.blob,
+        )
+        return target_part.relate_to(new_part, rel.reltype)
 
     @staticmethod
     def _remap_rids(element, rid_mapping):
@@ -556,6 +582,28 @@ class SlideCopier:
     # ------------------------------------------------------------------
     # Existing helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _copy_slide_background(source_slide: Slide, dest_slide: Slide):
+        """Copy the slide-level background (p:bg) from source to dest slide.
+
+        p:bg is the first child of p:cSld (schema order: bg?, spTree, ...).
+        ``slides.add_slide()`` never creates one, so without this step a
+        slide-level background (solid fill, gradient or picture fill) is
+        lost and the copy falls back to the layout/master background.
+        """
+        p_ns = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+        source_cSld = source_slide.element.find(f'{{{p_ns}}}cSld')
+        dest_cSld = dest_slide.element.find(f'{{{p_ns}}}cSld')
+        if source_cSld is None or dest_cSld is None:
+            return
+        source_bg = source_cSld.find(f'{{{p_ns}}}bg')
+        if source_bg is None:
+            return
+        existing_bg = dest_cSld.find(f'{{{p_ns}}}bg')
+        if existing_bg is not None:
+            dest_cSld.remove(existing_bg)
+        dest_cSld.insert(0, deepcopy(source_bg))
 
     @staticmethod
     def _copy_slide_size(source_prs: Presentation, target_prs: Presentation):

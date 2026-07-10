@@ -524,3 +524,158 @@ class TestMasterLayoutIdAttributes:
             assert len(reloaded.slides) == 3
         finally:
             Path(tmp_path).unlink()
+
+
+class TestSlideBackground:
+    """Slide-level background (p:bg) must survive copying."""
+
+    P_NS = 'http://schemas.openxmlformats.org/presentationml/2006/main'
+    A_NS = 'http://schemas.openxmlformats.org/drawingml/2006/main'
+
+    def _add_solid_background(self, slide, hex_color="0A0A0A"):
+        """Inject a p:bg solid fill as the first child of p:cSld."""
+        import lxml.etree as etree
+
+        bg_xml = (
+            f'<p:bg xmlns:p="{self.P_NS}" xmlns:a="{self.A_NS}">'
+            f'<p:bgPr><a:solidFill><a:srgbClr val="{hex_color}"/></a:solidFill>'
+            f'<a:effectLst/></p:bgPr></p:bg>'
+        )
+        cSld = slide.element.find(f'{{{self.P_NS}}}cSld')
+        cSld.insert(0, etree.fromstring(bg_xml))
+
+    def _background_color(self, slide):
+        """Return the srgbClr val of the slide's p:bg, or None."""
+        bg = slide.element.find(
+            f'{{{self.P_NS}}}cSld/{{{self.P_NS}}}bg',
+        )
+        if bg is None:
+            return None
+        clr = bg.find(f'.//{{{self.A_NS}}}srgbClr')
+        return None if clr is None else clr.get("val")
+
+    def test_copy_slide_preserves_solid_background(self):
+        source_prs = Presentation()
+        slide = source_prs.slides.add_slide(source_prs.slide_layouts[6])
+        self._add_solid_background(slide, "0A0A0A")
+
+        target_prs = Presentation()
+        copied = SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        assert self._background_color(copied) == "0A0A0A"
+
+    def test_copy_slide_background_is_first_child_of_cSld(self):
+        """p:bg must precede p:spTree (schema order) or the file is corrupt."""
+        source_prs = Presentation()
+        slide = source_prs.slides.add_slide(source_prs.slide_layouts[6])
+        self._add_solid_background(slide)
+
+        target_prs = Presentation()
+        copied = SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        cSld = copied.element.find(f'{{{self.P_NS}}}cSld')
+        first_child_tag = list(cSld)[0].tag
+        assert first_child_tag == f'{{{self.P_NS}}}bg'
+
+    def test_copy_slide_without_background_adds_none(self):
+        source_prs = Presentation()
+        source_prs.slides.add_slide(source_prs.slide_layouts[6])
+
+        target_prs = Presentation()
+        copied = SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        assert self._background_color(copied) is None
+
+    def test_copied_background_survives_save_and_reload(self):
+        source_prs = Presentation()
+        slide = source_prs.slides.add_slide(source_prs.slide_layouts[6])
+        self._add_solid_background(slide, "FF00AA")
+
+        target_prs = Presentation()
+        SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        with tempfile.NamedTemporaryFile(suffix=".pptx", delete=False) as tmp:
+            target_prs.save(tmp.name)
+            tmp_path = tmp.name
+        try:
+            reloaded = Presentation(tmp_path)
+            assert self._background_color(reloaded.slides[0]) == "FF00AA"
+        finally:
+            Path(tmp_path).unlink()
+
+
+class TestNonPilImageParts:
+    """Image parts PIL cannot identify (SVG, EMF, ...) must not break copying."""
+
+    SVG_BLOB = b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
+
+    def _make_source_with_svg_image_rel(self):
+        """Create a presentation whose slide part has an RT.IMAGE rel to an SVG part.
+
+        This mirrors what PowerPoint produces for svgBlip images
+        (e.g. decks exported from Figma).
+        """
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        from pptx.opc.package import Part
+        from pptx.opc.packuri import PackURI
+
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        package = prs.part.package
+        svg_part = Part(
+            PackURI('/ppt/media/image1.svg'),
+            'image/svg+xml',
+            package,
+            blob=self.SVG_BLOB,
+        )
+        slide.part.relate_to(svg_part, RT.IMAGE)
+        return prs
+
+    def test_copy_slide_with_svg_image_rel_does_not_raise(self):
+        source_prs = self._make_source_with_svg_image_rel()
+        target_prs = Presentation()
+
+        copied = SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        assert copied is not None
+
+    def test_copy_slide_with_svg_image_rel_copies_blob(self):
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+
+        source_prs = self._make_source_with_svg_image_rel()
+        target_prs = Presentation()
+
+        copied = SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        svg_rels = [
+            rel for rel in copied.part.rels.values()
+            if rel.reltype == RT.IMAGE
+            and rel.target_part.content_type == 'image/svg+xml'
+        ]
+        assert len(svg_rels) == 1
+        assert svg_rels[0].target_part.blob == self.SVG_BLOB
+
+    def test_copy_slide_with_svg_still_dedupes_normal_images(self):
+        """Raster images keep going through get_or_add_image_part."""
+        import io
+
+        from PIL import Image as PILImage
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        from pptx.util import Inches
+
+        source_prs = self._make_source_with_svg_image_rel()
+        buf = io.BytesIO()
+        PILImage.new("RGB", (4, 4), "red").save(buf, format="PNG")
+        buf.seek(0)
+        source_prs.slides[0].shapes.add_picture(
+            buf, Inches(1), Inches(1), Inches(2), Inches(2),
+        )
+
+        target_prs = Presentation()
+        copied = SlideCopier.copy_slide(source_prs, 0, target_prs)
+
+        image_rels = [
+            rel for rel in copied.part.rels.values() if rel.reltype == RT.IMAGE
+        ]
+        content_types = sorted(r.target_part.content_type for r in image_rels)
+        assert content_types == ['image/png', 'image/svg+xml']
